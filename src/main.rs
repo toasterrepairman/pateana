@@ -1,22 +1,31 @@
-use std::io::Write;
-use std::net::{TcpListener, TcpStream};
-use std::thread;
+use {
+    hyper::{
+        service::{make_service_fn, service_fn},
+        Body, Error, Request, Response, Server,
+    },
+    std::{env::args, net::ToSocketAddrs},
+};
 
-fn main() {
-    let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
-    println!("Listening on http://127.0.0.1:8080");
+const MSG: &[u8] = b"I'm a teapot";
 
-    for stream in listener.incoming() {
-        let stream = stream.unwrap();
-
-        thread::spawn(|| {
-            handle_request(stream);
-        });
-    }
+async fn handle(_: Request<Body>) -> Result<Response<Body>, Error> {
+    Ok(Response::new(MSG.into()))
 }
 
-fn handle_request(mut stream: TcpStream) {
-    let response = "HTTP/1.1 418 I'm a teapot\r\n\r\n";
-    stream.write(response.as_bytes()).unwrap();
-    stream.flush().unwrap();
+#[tokio::main]
+async fn main() -> Result<(), String> {
+    let addr = args()
+        .nth(1)
+        .ok_or("Missing argument")?
+        .to_socket_addrs()
+        .map_err(|e| e.to_string())?
+        .next()
+        .ok_or("No available address")?;
+
+    let make_service = make_service_fn(|_| async move { Ok::<_, Error>(service_fn(handle)) });
+    let builder = Server::bind(&addr);
+
+    println!("Listening on {}", addr);
+    let _ = builder.serve(make_service).await;
+    Ok(())
 }
